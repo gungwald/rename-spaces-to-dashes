@@ -8,6 +8,8 @@
 #include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
 #include <limits.h>     /* for PATH_MAX */
 
+enum FileType {REGULAR_FILE, DIRECTORY};
+
 const int RENAME_FAILURE = -1;
 const int RENAME_SUCCESS = 0;
 const int STAT_FAILURE = -1;
@@ -15,8 +17,8 @@ const int STAT_SUCCESS = 0;
 
 bool stringContains(char *toSearch, char toSearchFor);
 char *replaceAll(char *stringToModify, char toReplace, char replacement);
-void renameSpacesToDashes(char *file);
-bool recurse(char *file, void func(char *name));
+void renameSpacesToDashes(char *file, enum FileType type);
+bool descendDirectoryTree(char *file, void func(char *name, enum FileType type));
 void renameFile(char *from, char *to);
 bool isDirectory(char *name);
 
@@ -54,7 +56,7 @@ char *replaceAll(char *s, char searchChar, char replacementChar)
     return result;
 }
 
-bool recurse(char *file, void func(char *name))
+bool descendDirectoryTree(char *file, void func(char *name, enum FileType type))
 {
     bool ok = false;
     DIR *d;
@@ -66,7 +68,7 @@ bool recurse(char *file, void func(char *name))
         {
             while ((entry = readdir(d)) != NULL) 
             {
-                recurse(entry->d_name, func);
+                descendDirectoryTree(entry->d_name, func);
             }
             closedir(d);
         }
