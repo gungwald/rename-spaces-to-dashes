@@ -28,7 +28,7 @@ const int STAT_SUCCESS = 0;
 bool stringContains(const char *toSearch, char toSearchFor);
 char *replaceAll(const char *stringToModify, char toReplace, char replacement);
 void renameSpacesToDashes(const char *file, enum FileType type);
-bool descendDirectoryTree(const char *path, void func(const char *path, enum FileType type));
+bool descendDirectoryTree(const char *path, void func(const char *path));
 void renameFile(const char *from, const char *to);
 bool isDirectory(const char *name);
 char *buildPath(const char *dirName, const char *fileName);
@@ -39,12 +39,13 @@ int main(int argc, char *argv[])
     int exitStatus = EXIT_SUCCESS;
     char cwd[PATH_MAX];
 
-    if (argc > 1)
-        for (i = 1; i < argc; i++)
+    if (argc > 1) {
+        for (i = 1; i < argc; i++) {
             descendDirectoryTree(argv[i], renameSpacesToDashes);
-    else
+        }
+    } else {
         descendDirectoryTree(getcwd(cwd, PATH_MAX), renameSpacesToDashes);
-    
+    }
     return exitStatus;
 }
 
@@ -77,7 +78,7 @@ char *replaceAll(const char *s, char searchChar, char replacementChar)
     return result;
 }
 
-void descendDirectoryTree(const char *path, void func(const char *path, enum FileType type))
+void descendDirectoryTree(const char *path, void func(const char *path))
 {
     DIR *d;
     struct dirent *entry;
