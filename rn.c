@@ -1,26 +1,37 @@
+#include <ctype.h>      /* for tolower */
+#include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
+#include <limits.h>     /* for PATH_MAX */
 #include <stdbool.h>    /* for bool, TRUE, FALSE */
 #include <stdio.h>      /* for rename */
 #include <stdlib.h>     /* for EXIT_FAILURE, EXIT_SUCCESS */
-#include <string.h>
+#include <string.h>     /* for strlen, strcat, strcpy */
 #include <sys/types.h>
 #include <sys/stat.h>   /* for stat, S_ISDIR, struct stat */
 #include <unistd.h>
-#include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
-#include <limits.h>     /* for PATH_MAX */
+
+/* WIN32 is always defined for Windows regardless of word length. */
+#ifdef WIN32
+const char *FILE_SEPARATOR = "\\";
+#else
+const char *FILE_SEPARATOR = "/";
+#endif
 
 enum FileType {REGULAR_FILE, DIRECTORY};
 
+const DIR *OPENDIR_FAILURE = NULL;
+const DIR *READDIR_FAILURE = NULL;
 const int RENAME_FAILURE = -1;
 const int RENAME_SUCCESS = 0;
 const int STAT_FAILURE = -1;
 const int STAT_SUCCESS = 0;
 
-bool stringContains(char *toSearch, char toSearchFor);
-char *replaceAll(char *stringToModify, char toReplace, char replacement);
-void renameSpacesToDashes(char *file, enum FileType type);
-bool descendDirectoryTree(char *file, void func(char *name, enum FileType type));
-void renameFile(char *from, char *to);
-bool isDirectory(char *name);
+bool stringContains(const char *toSearch, char toSearchFor);
+char *replaceAll(const char *stringToModify, char toReplace, char replacement);
+void renameSpacesToDashes(const char *file, enum FileType type);
+bool descendDirectoryTree(const char *path, void func(const char *path, enum FileType type));
+void renameFile(const char *from, const char *to);
+bool isDirectory(const char *name);
+char *buildPath(const char *dirName, const char *fileName);
 
 int main(int argc, char *argv[])
 {
@@ -30,19 +41,29 @@ int main(int argc, char *argv[])
 
     if (argc > 1)
         for (i = 1; i < argc; i++)
-            recurse(argv[i], renameSpacesToDashes);
+            descendDirectoryTree(argv[i], renameSpacesToDashes);
     else
-        recurse(getcwd(cwd, PATH_MAX), renameSpacesToDashes);
+        descendDirectoryTree(getcwd(cwd, PATH_MAX), renameSpacesToDashes);
     
     return exitStatus;
 }
 
-bool stringContains(char *toSearch, char toSearchFor)
+bool stringContains(const char *toSearch, char toSearchFor)
 {
     return strchr(toSearch, toSearchFor) != NULL;
 }
 
-char *replaceAll(char *s, char searchChar, char replacementChar)
+/**
+ * Creates a new string with all instances of searchChar replaced with 
+ * replacementChar.
+ *
+ * @param s The string in which to search for searchChar
+ * @param searchChar The character to search for
+ * @param replacementChar The character to replace searchChar with
+ * @return A new string with the characters replaced. It must be freed
+ *         by the caller
+ */
+char *replaceAll(const char *s, char searchChar, char replacementChar)
 {
     char *charFoundPointer;
     char *searchStart;
@@ -51,62 +72,99 @@ char *replaceAll(char *s, char searchChar, char replacementChar)
     result = searchStart = strdup(s);
     while ((charFoundPointer = strchr(searchStart, searchChar)) != NULL) {
         *charFoundPointer = replacementChar;
-        searchStart = charFoundPointer++;
+        searchStart = charFoundPointer + 1;
     }
     return result;
 }
 
-bool descendDirectoryTree(char *file, void func(char *name, enum FileType type))
+void descendDirectoryTree(const char *path, void func(const char *path, enum FileType type))
 {
-    bool ok = false;
     DIR *d;
     struct dirent *entry;
+    char *dirEntryPath;
     
-    if (isDirectory(file)) 
-    {
-        if ((d = opendir(file)) != NULL) 
-        {
-            while ((entry = readdir(d)) != NULL) 
-            {
-                descendDirectoryTree(entry->d_name, func);
+    if (isDirectory(path)) {
+        if ((d = opendir(path)) != OPENDIR_FAILURE) {
+            while ((entry = readdir(d)) != READDIR_FAILURE) {
+                dirEntryPath = buildPath(path, entry->d_name);
+                descendDirectoryTree(dirEntryPath, func);
+                free(dirEntryPath);
             }
             closedir(d);
         }
-        else
-        {
-            perror(file);
+        else {
+            perror(path);
         }
     }
-    func(file);
-    return ok;
+    func(path);
 }
 
-void renameSpacesToDashes(char *fileName)
+void renameSpacesToDashes(const char *path)
 {
-    char *nameWithoutSpaces;
+    char *pathWithoutSpaces;
+    int answer = ' ';
 
-    if (contains(fileName, ' ')) {
-        nameWithoutSpaces = replaceAll(file, ' ', '-');
-        renameFile(fileName, nameWithoutSpaces);
-        free(nameWithoutSpaces);
+    if (contains(path, ' ')) {
+        pathWithoutSpaces = replaceAll(path, ' ', '-');
+        while (answer != 'y' && answer != 'n') {
+            printf("Rename '%s' to '%s'? (y/n) ", path, pathWithoutSpaces);
+            answer = tolower(getchar());
+        }
+        if (answer == 'y') {
+            renameFile(path, pathWithoutSpaces);
+        }
+        free(pathWithoutSpaces);
     }
 }
 
-void renameFile(char *from, char *to)
+void renameFile(const char *from, const char *to)
 {
     if (rename(from, to) == RENAME_FAILURE)
         perror(from);
 }
 
-bool isDirectory(char *name)
+bool isDirectory(const char *path)
 {
-    struct stat fileInfo;
+    struct stat fileProperties;
     bool isDirectory = false;
 
-    if (stat(name, &fileInfo) == STAT_FAILURE)
-        perror(name);
-    else if (S_ISDIR(fileInfo.st_mode))
+    if (stat(path, &fileProperties) == STAT_FAILURE)
+        perror(path);
+    else if (S_ISDIR(fileProperties.st_mode))
         isDirectory = true;
 
     return isDirectory;
 }
+
+char *buildPath(const char *dirName, const char *fileName)
+{
+    char *result;
+    size_t dirNameLength = 0;
+    size_t fileNameLength = 0;
+    size_t resultLength;
+    bool useFileSeparator;
+
+    if (dirName != NULL)
+        dirNameLength = strlen(dirName);
+
+    if (fileName != NULL)
+        fileNameLength = strlen(fileName);
+
+    if (dirNameLength > 0 && fileNameLength > 0)
+        useFileSeparator = true;
+    else
+        useFileSeparator = false;
+
+    resultLength = dirNameLength + (useFileSeparator?strlen(FILE_SEPARATOR):0) + fileNameLength;
+    result = (char *) malloc(resultLength * sizeof(char));
+
+    strcat(result, "");
+    if (dirName != NULL)
+        strcat(result, dirName);
+    if (useFileSeparator)
+        strcat(result, FILE_SEPARATOR);
+    if (fileName != NULL)
+        strcat(result, fileName);
+    return result;
+}
+
