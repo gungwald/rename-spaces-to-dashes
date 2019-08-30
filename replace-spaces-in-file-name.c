@@ -1,9 +1,10 @@
 #include <ctype.h>      /* for tolower */
 #include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
+#include <libgen.h>		/* for basename, dirname */
 #include <limits.h>     /* for PATH_MAX */
 #include <stdbool.h>    /* for bool, TRUE, FALSE */
 #include <stdio.h>      /* for rename */
-#include <stdlib.h>     /* for EXIT_FAILURE, EXIT_SUCCESS */
+#include <stdlib.h>     /* for getenv, EXIT_FAILURE, EXIT_SUCCESS */
 #include <string.h>     /* for strlen, strcat, strcpy */
 #include <sys/types.h>
 #include <sys/stat.h>   /* for stat, S_ISDIR, struct stat */
@@ -16,28 +17,49 @@ const char *FILE_SEPARATOR = "\\";
 const char *FILE_SEPARATOR = "/";
 #endif
 
+#define MAX_LINE_LENGTH 1024
+
 enum FileType {REGULAR_FILE, DIRECTORY};
 
 const DIR *OPENDIR_FAILURE = NULL;
-const DIR *READDIR_FAILURE = NULL;
+const struct dirent *READDIR_FAILURE = NULL;
 const int RENAME_FAILURE = -1;
 const int RENAME_SUCCESS = 0;
 const int STAT_FAILURE = -1;
 const int STAT_SUCCESS = 0;
 
-bool stringContains(const char *toSearch, char toSearchFor);
+bool stringContains(const char *searchIn, char searchFor);
 char *replaceAll(const char *stringToModify, char toReplace, char replacement);
-void renameSpacesToDashes(const char *file, enum FileType type);
-bool descendDirectoryTree(const char *path, void func(const char *path));
+void renameSpacesToDashes(const char *path);
+void descendDirectoryTree(const char *path, void func(const char *path));
 void renameFile(const char *from, const char *to);
 bool isDirectory(const char *name);
 char *buildPath(const char *dirName, const char *fileName);
+void chomp(char *line);
 
+bool debug = false;
+
+/* TODO: Use getopt */
+/* TODO: Make replacement character a command line option, defaults to dash */
+/* TODO: Make "character to replace" a command line option, defaults to space */
+/* TODO: Make program name plural */
+/* TODO: Add no-ask option */
+/* TODO: Ask for any options not given, showing defaults */
+/* TODO: If a rename clashes, modify the name, like append "--2" */
+/* TODO: Add option to simply find the problematic names, no rename */
+
+/* Later, maybe a different program */
+/* TODO: Identify all problematic characters in file names, not just spaces */
+/* TODO: Think of a better name, like replace-problem-chars-in-file-names */
 int main(int argc, char *argv[])
 {
     int i;
     int exitStatus = EXIT_SUCCESS;
     char cwd[PATH_MAX];
+
+    if (getenv("DEBUG") != NULL) {
+    	debug = true;
+    }
 
     if (argc > 1) {
         for (i = 1; i < argc; i++) {
@@ -49,9 +71,9 @@ int main(int argc, char *argv[])
     return exitStatus;
 }
 
-bool stringContains(const char *toSearch, char toSearchFor)
+bool stringContains(const char *searchIn, char searchFor)
 {
-    return strchr(toSearch, toSearchFor) != NULL;
+    return strchr(searchIn, searchFor) != NULL;
 }
 
 /**
@@ -84,12 +106,15 @@ void descendDirectoryTree(const char *path, void func(const char *path))
     struct dirent *entry;
     char *dirEntryPath;
     
+    if (debug) printf("Entering descendDirectoryTree with path=%s\n", path);
     if (isDirectory(path)) {
         if ((d = opendir(path)) != OPENDIR_FAILURE) {
             while ((entry = readdir(d)) != READDIR_FAILURE) {
-                dirEntryPath = buildPath(path, entry->d_name);
-                descendDirectoryTree(dirEntryPath, func);
-                free(dirEntryPath);
+            	if (entry->d_name[0] != '.') { /* Not hidden, cwd, or parent */
+	                dirEntryPath = buildPath(path, entry->d_name);
+	                descendDirectoryTree(dirEntryPath, func);
+	                free(dirEntryPath);
+            	}
             }
             closedir(d);
         }
@@ -98,23 +123,34 @@ void descendDirectoryTree(const char *path, void func(const char *path))
         }
     }
     func(path);
+    if (debug) printf("Returning from descendDirectoryTree\n");
 }
 
+/* TODO: Add a quit option */
 void renameSpacesToDashes(const char *path)
 {
-    char *pathWithoutSpaces;
-    int answer = ' ';
+	char *pathWithoutSpaces;
+    char *pathBasenameWithoutSpaces;
+    char answer[MAX_LINE_LENGTH] = "";
+    char *pathDirname;
+    char *pathBasename;
 
-    if (contains(path, ' ')) {
-        pathWithoutSpaces = replaceAll(path, ' ', '-');
-        while (answer != 'y' && answer != 'n') {
-            printf("Rename '%s' to '%s'? (y/n) ", path, pathWithoutSpaces);
-            answer = tolower(getchar());
+    pathBasename = basename(path);
+    if (stringContains(pathBasename, ' ')) {
+    	pathDirname = dirname(path);
+        pathBasenameWithoutSpaces = replaceAll(pathBasename, ' ', '-');
+        while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0) {
+            printf("Rename '%s' to '%s'? (y/n) ", path, basename(pathBasenameWithoutSpaces));
+            fgets(answer, MAX_LINE_LENGTH, stdin);
+            chomp(answer);
+            tolower(answer[0]);
         }
-        if (answer == 'y') {
+        if (answer[0] == 'y') {
+        	pathWithoutSpaces = buildPath(pathDirname, pathBasenameWithoutSpaces);
             renameFile(path, pathWithoutSpaces);
+            free(pathWithoutSpaces);
         }
-        free(pathWithoutSpaces);
+        free(pathBasenameWithoutSpaces);
     }
 }
 
@@ -134,6 +170,7 @@ bool isDirectory(const char *path)
     else if (S_ISDIR(fileProperties.st_mode))
         isDirectory = true;
 
+    if (debug) printf("isDirectory returning %d for %s\n", isDirectory, path);
     return isDirectory;
 }
 
@@ -145,6 +182,7 @@ char *buildPath(const char *dirName, const char *fileName)
     size_t resultLength;
     bool useFileSeparator;
 
+    if (debug) printf("Entering buildPath with dirName=%s fileName=%s\n", dirName, fileName);
     if (dirName != NULL)
         dirNameLength = strlen(dirName);
 
@@ -159,13 +197,35 @@ char *buildPath(const char *dirName, const char *fileName)
     resultLength = dirNameLength + (useFileSeparator?strlen(FILE_SEPARATOR):0) + fileNameLength;
     result = (char *) malloc(resultLength * sizeof(char));
 
-    strcat(result, "");
+    strcpy(result, "");
     if (dirName != NULL)
         strcat(result, dirName);
     if (useFileSeparator)
         strcat(result, FILE_SEPARATOR);
     if (fileName != NULL)
         strcat(result, fileName);
+    if (debug) printf("Returning from buildPath: result=%s\n", result);
     return result;
 }
 
+void chomp(char *line)
+{
+	/* Because these are unsigned, if they're 0 and we subtract 1, we don't
+	   get -1 but a very large number. So they can't be allowed to go
+	   negative. The code guards against negative values in these variables. */
+	size_t lastIndex;
+	size_t lineLength;
+
+	lineLength = strlen(line);
+	if (lineLength > 0) {
+		lastIndex = lineLength - 1;
+		while (line[lastIndex] == '\r' || line[lastIndex] == '\n') {
+			line[lastIndex] = '\0';
+			if (lastIndex == 0) {
+				break;
+			} else {
+				lastIndex--;
+			}
+		}
+	}
+}
