@@ -5,7 +5,7 @@
 #include <stdbool.h>    /* for bool, TRUE, FALSE */
 #include <stdio.h>      /* for rename */
 #include <stdlib.h>     /* for getenv, EXIT_FAILURE, EXIT_SUCCESS */
-#include <string.h>     /* for strlen, strcat, strcpy */
+#include <string.h>     /* for strlen, strcat, strcpy, strchr */
 #include <sys/types.h>
 #include <sys/stat.h>   /* for stat, S_ISDIR, struct stat */
 #include <unistd.h>
@@ -28,6 +28,7 @@ const int RENAME_SUCCESS = 0;
 const int STAT_FAILURE = -1;
 const int STAT_SUCCESS = 0;
 
+char *btoa(bool b);
 bool stringContains(const char *searchIn, char searchFor);
 char *replaceAll(const char *stringToModify, char toReplace, char replacement);
 void renameSpacesToDashes(const char *path);
@@ -170,7 +171,7 @@ bool isDirectory(const char *path)
     else if (S_ISDIR(fileProperties.st_mode))
         isDirectory = true;
 
-    if (debug) printf("isDirectory returning %d for %s\n", isDirectory, path);
+    if (debug) printf("isDirectory returning %s for %s\n", btoa(isDirectory), path);
     return isDirectory;
 }
 
@@ -228,4 +229,12 @@ void chomp(char *line)
 			}
 		}
 	}
+}
+
+/**
+ * Converts a bool to a string (ascii).
+ */
+char *btoa(bool b)
+{
+	return b ? "true" : "false";
 }
