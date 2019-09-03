@@ -1,5 +1,6 @@
 #include <ctype.h>      /* for tolower */
 #include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
+#include <getopt.h>		/* for struct option, required_arguent, getopt_long, */
 #include <libgen.h>		/* for basename, dirname */
 #include <limits.h>     /* for PATH_MAX */
 #include <stdbool.h>    /* for bool, TRUE, FALSE */
@@ -56,10 +57,15 @@ int main(int argc, char *argv[])
     int i;
     int exitStatus = EXIT_SUCCESS;
     char cwd[PATH_MAX];
+    struct option acceptedArguments[] = {
+    		{"replacement", required_argument, 0, 0},
+			{0,				0,				   0, 0}
+    };
 
     if (getenv("DEBUG") != NULL) {
     	debug = true;
     }
+
 
     if (argc > 1) {
         for (i = 1; i < argc; i++) {
