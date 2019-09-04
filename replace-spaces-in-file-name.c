@@ -28,6 +28,7 @@ const int RENAME_FAILURE = -1;
 const int RENAME_SUCCESS = 0;
 const int STAT_FAILURE = -1;
 const int STAT_SUCCESS = 0;
+const int GETOPT_FINISHED = -1;
 
 bool stringContains(const char *searchIn, char searchFor);
 char *replaceAll(const char *stringToModify, char toReplace, char replacement);
@@ -39,6 +40,7 @@ char *buildPath(const char *dirName, const char *fileName);
 void chomp(char *line);
 
 bool debug = false;
+char replacementChar = '-';
 
 /* TODO: Use getopt */
 /* TODO: Make replacement character a command line option, defaults to dash */
@@ -55,9 +57,12 @@ bool debug = false;
 int main(int argc, char *argv[])
 {
     int i;
+    int longOptionIndex = 0;
     int exitStatus = EXIT_SUCCESS;
     char cwd[PATH_MAX];
-    struct option acceptedArguments[] = {
+    int opt;
+
+    struct option acceptedLongOptions[] = {
     		{"replacement", required_argument, 0, 0},
 			{0,				0,				   0, 0}
     };
@@ -66,6 +71,15 @@ int main(int argc, char *argv[])
     	debug = true;
     }
 
+    while ((opt = getopt_long(argc, argv, "r:", acceptedLongOptions, &longOptionIndex)) != GETOPT_FINISHED) {
+    	switch (opt) {
+    	case 'r':
+    		replacementChar = optarg;
+			break;
+    	default:
+    		fprintf(stderr, "unrecognized option %c\n", opt);
+    	}
+    }
 
     if (argc > 1) {
         for (i = 1; i < argc; i++) {
