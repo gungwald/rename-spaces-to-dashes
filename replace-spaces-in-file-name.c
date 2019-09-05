@@ -1,15 +1,15 @@
 #include <ctype.h>      /* for tolower */
 #include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
-#include <getopt.h>		/* for struct option, required_arguent, getopt_long, */
-#include <libgen.h>		/* for basename, dirname */
-#include <limits.h>     /* for PATH_MAX */
+#include <errno.h>      /* for errno, ERANGE */
+#include <getopt.h>	/* for struct option, required_arguent, getopt_long, */
+#include <libgen.h>	/* for basename, dirname */
 #include <stdbool.h>    /* for bool, TRUE, FALSE */
 #include <stdio.h>      /* for rename */
 #include <stdlib.h>     /* for getenv, EXIT_FAILURE, EXIT_SUCCESS */
-#include <string.h>     /* for strlen, strcat, strcpy, strchr */
+#include <string.h>     /* for strlen, strcat, strcpy, strchr, strdup */
 #include <sys/types.h>
 #include <sys/stat.h>   /* for stat, S_ISDIR, struct stat */
-#include <unistd.h>
+#include <unistd.h>     /* for getcwd */
 
 /* WIN32 is always defined for Windows regardless of word length. */
 #ifdef WIN32
@@ -17,6 +17,11 @@ const char *FILE_SEPARATOR = "\\";
 #else
 const char *FILE_SEPARATOR = "/";
 #endif
+
+#define TRACE_ENTER(f,n,v)          if(debug)printf("Enter %s with %s=%s\n",f,n,v)
+#define TRACE_ENTER2(f,n,v,n2,v2)   if(debug)printf("Enter %s with %s=%s %s=%s\n",f,n,v,n2,v2)
+#define TRACE_RETURN(f,v)           if(debug)printf("Return from %s wth %s\n",f,v)
+#define TRACE_RETURN_BOOL(f,v)      if(debug)printf("Return from %s wth %s\n",f,btoa(v))
 
 #define MAX_LINE_LENGTH 1024
 
@@ -29,6 +34,9 @@ const int RENAME_SUCCESS = 0;
 const int STAT_FAILURE = -1;
 const int STAT_SUCCESS = 0;
 const int GETOPT_FINISHED = -1;
+const void *MALLOC_FAILURE = NULL;
+const char *GETCWD_FAILURE = NULL;
+const char *FGETS_FAILURE_OR_EOF = NULL;
 
 char *btoa(bool b);
 bool stringContains(const char *searchIn, char searchFor);
@@ -39,6 +47,8 @@ void renameFile(const char *from, const char *to);
 bool isDirectory(const char *name);
 char *buildPath(const char *dirName, const char *fileName);
 void chomp(char *line);
+char *allocateCharArray(size_t size);
+char *getCurrentDirectory();
 
 bool debug = false;
 char replacementChar = '-';
@@ -60,12 +70,12 @@ int main(int argc, char *argv[])
     int i;
     int longOptionIndex = 0;
     int exitStatus = EXIT_SUCCESS;
-    char cwd[PATH_MAX];
+    char *cwd;
     int opt;
 
     struct option acceptedLongOptions[] = {
-    		{"replacement", required_argument, 0, 0},
-			{0,				0,				   0, 0}
+        {"replacement", required_argument, 0, 0},
+        {0,		0,		   0, 0}
     };
 
     if (getenv("DEBUG") != NULL) {
@@ -75,10 +85,12 @@ int main(int argc, char *argv[])
     while ((opt = getopt_long(argc, argv, "r:", acceptedLongOptions, &longOptionIndex)) != GETOPT_FINISHED) {
     	switch (opt) {
     	case 'r':
-    		replacementChar = optarg;
-			break;
+            if (strlen(optarg) > 0) {
+                replacementChar = optarg[0];
+            }
+            break;
     	default:
-    		fprintf(stderr, "unrecognized option %c\n", opt);
+            fprintf(stderr, "unrecognized option %c\n", opt);
     	}
     }
 
@@ -87,7 +99,9 @@ int main(int argc, char *argv[])
             descendDirectoryTree(argv[i], renameSpacesToDashes);
         }
     } else {
-        descendDirectoryTree(getcwd(cwd, PATH_MAX), renameSpacesToDashes);
+        cwd = getCurrentDirectory();
+        descendDirectoryTree(cwd, renameSpacesToDashes);
+        free(cwd);
     }
     return exitStatus;
 }
@@ -126,15 +140,16 @@ void descendDirectoryTree(const char *path, void func(const char *path))
     DIR *d;
     struct dirent *entry;
     char *dirEntryPath;
+    char *fn = "descendDirectoryTree";
     
-    if (debug) printf("Entering descendDirectoryTree with path=%s\n", path);
+    TRACE_ENTER(fn, "path", path);
     if (isDirectory(path)) {
         if ((d = opendir(path)) != OPENDIR_FAILURE) {
             while ((entry = readdir(d)) != READDIR_FAILURE) {
             	if (entry->d_name[0] != '.') { /* Not hidden, cwd, or parent */
-	                dirEntryPath = buildPath(path, entry->d_name);
-	                descendDirectoryTree(dirEntryPath, func);
-	                free(dirEntryPath);
+                    dirEntryPath = buildPath(path, entry->d_name);
+                    descendDirectoryTree(dirEntryPath, func);
+                    free(dirEntryPath);
             	}
             }
             closedir(d);
@@ -144,35 +159,39 @@ void descendDirectoryTree(const char *path, void func(const char *path))
         }
     }
     func(path);
-    if (debug) printf("Returning from descendDirectoryTree\n");
+    TRACE_RETURN(fn, "void");
 }
 
 /* TODO: Add a quit option */
 void renameSpacesToDashes(const char *path)
 {
-	char *pathWithoutSpaces;
+    char *pathWithoutSpaces;
     char *pathBasenameWithoutSpaces;
     char answer[MAX_LINE_LENGTH] = "";
     char *pathDirname;
     char *pathBasename;
 
-    pathBasename = basename(path);
+    pathBasename = basename(strdup(path));
     if (stringContains(pathBasename, ' ')) {
-    	pathDirname = dirname(path);
-        pathBasenameWithoutSpaces = replaceAll(pathBasename, ' ', '-');
+    	pathDirname = dirname(strdup(path));
+        pathBasenameWithoutSpaces = replaceAll(pathBasename, ' ', replacementChar);
         while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0) {
-            printf("Rename '%s' to '%s'? (y/n) ", path, basename(pathBasenameWithoutSpaces));
-            fgets(answer, MAX_LINE_LENGTH, stdin);
+            printf("Rename '%s' to '%s'? (y/n) ", path, pathBasenameWithoutSpaces);
+            if (fgets(answer, MAX_LINE_LENGTH, stdin) == FGETS_FAILURE_OR_EOF) {
+                break;
+            }
             chomp(answer);
             tolower(answer[0]);
         }
         if (answer[0] == 'y') {
-        	pathWithoutSpaces = buildPath(pathDirname, pathBasenameWithoutSpaces);
+            pathWithoutSpaces = buildPath(pathDirname, pathBasenameWithoutSpaces);
             renameFile(path, pathWithoutSpaces);
             free(pathWithoutSpaces);
         }
         free(pathBasenameWithoutSpaces);
+        free(pathDirname);
     }
+    free(pathBasename);
 }
 
 void renameFile(const char *from, const char *to)
@@ -185,13 +204,14 @@ bool isDirectory(const char *path)
 {
     struct stat fileProperties;
     bool isDirectory = false;
+    char *fn = "isDirectory";
 
     if (stat(path, &fileProperties) == STAT_FAILURE)
         perror(path);
     else if (S_ISDIR(fileProperties.st_mode))
         isDirectory = true;
 
-    if (debug) printf("isDirectory returning %s for %s\n", btoa(isDirectory), path);
+    TRACE_RETURN_BOOL(fn, isDirectory);
     return isDirectory;
 }
 
@@ -202,8 +222,9 @@ char *buildPath(const char *dirName, const char *fileName)
     size_t fileNameLength = 0;
     size_t resultLength;
     bool useFileSeparator;
+    char *fn = "buildPath";
 
-    if (debug) printf("Entering buildPath with dirName=%s fileName=%s\n", dirName, fileName);
+    TRACE_ENTER2(fn, "dirName", dirName, "fileName", fileName);
     if (dirName != NULL)
         dirNameLength = strlen(dirName);
 
@@ -216,7 +237,7 @@ char *buildPath(const char *dirName, const char *fileName)
         useFileSeparator = false;
 
     resultLength = dirNameLength + (useFileSeparator?strlen(FILE_SEPARATOR):0) + fileNameLength;
-    result = (char *) malloc(resultLength * sizeof(char));
+    result = allocateCharArray(resultLength);
 
     strcpy(result, "");
     if (dirName != NULL)
@@ -225,30 +246,31 @@ char *buildPath(const char *dirName, const char *fileName)
         strcat(result, FILE_SEPARATOR);
     if (fileName != NULL)
         strcat(result, fileName);
-    if (debug) printf("Returning from buildPath: result=%s\n", result);
+
+    TRACE_RETURN(fn, result);
     return result;
 }
 
 void chomp(char *line)
 {
-	/* Because these are unsigned, if they're 0 and we subtract 1, we don't
-	   get -1 but a very large number. So they can't be allowed to go
-	   negative. The code guards against negative values in these variables. */
-	size_t lastIndex;
-	size_t lineLength;
+    /* Because these are unsigned, if they're 0 and we subtract 1, we don't
+       get -1 but a very large number. So they can't be allowed to go
+       negative. The code guards against negative values in these variables. */
+    size_t lastIndex;
+    size_t lineLength;
 
-	lineLength = strlen(line);
-	if (lineLength > 0) {
-		lastIndex = lineLength - 1;
-		while (line[lastIndex] == '\r' || line[lastIndex] == '\n') {
-			line[lastIndex] = '\0';
-			if (lastIndex == 0) {
-				break;
-			} else {
-				lastIndex--;
-			}
-		}
-	}
+    lineLength = strlen(line);
+    if (lineLength > 0) {
+        lastIndex = lineLength - 1;
+        while (line[lastIndex] == '\r' || line[lastIndex] == '\n') {
+            line[lastIndex] = '\0';
+            if (lastIndex == 0) {
+                break;
+            } else {
+                lastIndex--;
+            }
+        }
+    }
 }
 
 /**
@@ -256,5 +278,43 @@ void chomp(char *line)
  */
 char *btoa(bool b)
 {
-	return b ? "true" : "false";
+    return b ? "true" : "false";
+}
+
+char *allocateCharArray(size_t size)
+{
+    char *array;
+
+    if ((array = (char *) malloc(size * sizeof(char))) == MALLOC_FAILURE) {
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+    return array;
+}
+
+char *getCurrentDirectory()
+{
+    size_t bufferSize = 256;
+    char *buffer;
+    bool stillTrying = true;
+    int getcwdErrorCode;
+
+    while (stillTrying) {
+        buffer = allocateCharArray(bufferSize);
+        if (getcwd(buffer, bufferSize) == GETCWD_FAILURE) {
+            getcwdErrorCode = errno; /* Save it for later */
+            free(buffer);
+            if (getcwdErrorCode == ERANGE) {
+                /* A bigger buffer is needed. */
+                bufferSize *= 2; /* Double the size */
+                buffer = allocateCharArray(bufferSize);
+            } else {
+                perror("getcwd");
+                exit(EXIT_FAILURE);
+            }
+        } else {
+            stillTrying = false;
+        }
+    }
+    return buffer;
 }
