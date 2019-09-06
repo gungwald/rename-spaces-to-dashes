@@ -53,3 +53,4 @@ dkms.conf
 
 # Vim swap files
 .*.swp
+/replace-spaces-in-file-name

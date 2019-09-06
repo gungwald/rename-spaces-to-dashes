@@ -170,10 +170,14 @@ void renameSpacesToDashes(const char *path)
     char answer[MAX_LINE_LENGTH] = "";
     char *pathDirname;
     char *pathBasename;
+    char *pathCopy;
+    char *pathCopy2;
 
-    pathBasename = basename(strdup(path));
+    pathCopy = strdup(path);
+    pathBasename = basename(pathCopy);
     if (stringContains(pathBasename, ' ')) {
-    	pathDirname = dirname(strdup(path));
+        pathCopy2 = strdup(path);
+    	pathDirname = dirname(pathCopy2);
         pathBasenameWithoutSpaces = replaceAll(pathBasename, ' ', replacementChar);
         while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0) {
             printf("Rename '%s' to '%s'? (y/n) ", path, pathBasenameWithoutSpaces);
@@ -189,9 +193,9 @@ void renameSpacesToDashes(const char *path)
             free(pathWithoutSpaces);
         }
         free(pathBasenameWithoutSpaces);
-        free(pathDirname);
+        free(pathCopy2);
     }
-    free(pathBasename);
+    free(pathCopy);
 }
 
 void renameFile(const char *from, const char *to)
