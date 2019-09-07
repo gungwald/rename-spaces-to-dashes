@@ -1,8 +1,8 @@
 #include <ctype.h>      /* for tolower */
 #include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
 #include <errno.h>      /* for errno, ERANGE */
-#include <getopt.h>		/* for struct option, required_arguent, getopt_long, optind, optarg */
-#include <libgen.h>		/* for basename, dirname */
+#include <getopt.h>     /* for struct option, required_arguent, getopt_long, optind, optarg */
+#include <libgen.h>     /* for basename, dirname */
 #include <stdbool.h>    /* for bool, TRUE, FALSE */
 #include <stdio.h>      /* for rename */
 #include <stdlib.h>     /* for getenv, EXIT_FAILURE, EXIT_SUCCESS */
@@ -18,10 +18,10 @@ const char *FILE_SEPARATOR = "\\";
 const char *FILE_SEPARATOR = "/";
 #endif
 
-#define TRACE_ENTER(f,n,v)          if(debug)printf("Enter %s with %s=%s\n",f,n,v)
-#define TRACE_ENTER2(f,n,v,n2,v2)   if(debug)printf("Enter %s with %s=%s %s=%s\n",f,n,v,n2,v2)
-#define TRACE_RETURN(f,v)           if(debug)printf("Return from %s wth %s\n",f,v)
-#define TRACE_RETURN_BOOL(f,v)      if(debug)printf("Return from %s wth %s\n",f,btoa(v))
+#define TRACE_ENTER(f,n,v)          if(globalDebug)printf("Enter %s with %s=%s\n",f,n,v)
+#define TRACE_ENTER2(f,n,v,n2,v2)   if(globalDebug)printf("Enter %s with %s=%s %s=%s\n",f,n,v,n2,v2)
+#define TRACE_RETURN(f,v)           if(globalDebug)printf("Return from %s wth %s\n",f,v)
+#define TRACE_RETURN_BOOL(f,v)      if(globalDebug)printf("Return from %s wth %s\n",f,btoa(v))
 
 #define MAX_LINE_LENGTH 1024
 
@@ -40,8 +40,8 @@ const char *FGETS_FAILURE_OR_EOF = NULL;
 
 char *btoa(bool b);
 bool stringContains(const char *searchIn, char searchFor);
-char *replaceAll(const char *stringToModify, char toReplace, char replacement);
-void renameSpacesToDashes(const char *path);
+char *replaceAll(const char *stringToModify, char searchFor, char replaceWith);
+void replaceInFileName(const char *path);
 void descendDirectoryTree(const char *path, void func(const char *path));
 void renameFile(const char *from, const char *to);
 bool isDirectory(const char *name);
@@ -51,9 +51,12 @@ char *allocateCharArray(size_t size);
 char *getCurrentDirectory();
 char *toLowerCase(char *s);
 
-bool debug = false;
-char replacementChar = '-';
-char charToReplace = ' ';
+bool globalDebug = false;
+char *globalProgramName;
+char globalOptionReplaceWith = '-';
+char globalOptionSearchFor = ' ';
+bool globalOptionAutoApprove = false;
+bool globalOptionSearchOnly = false;
 
 /* TODO: Make "character to replace" a command line option, defaults to space */
 /* TODO: Make program name plural */
@@ -73,37 +76,53 @@ int main(int argc, char *argv[])
     char *cwd;
     int opt;
 
+    globalProgramName = strdup(argv[0]);
+
     struct option acceptedLongOptions[] = {
-        {"replacement", required_argument, NULL, 'r'},
-        {NULL,			0,                 NULL, 0}
+        {"replace-with", required_argument, NULL, 'r'},
+		{"search-for", required_argument, NULL, 's'},
+		{"auto-approve", no_argument, NULL, 'y'},
+		{"search-only", no_argument, NULL, 'o'},
+        {NULL, 0, NULL, 0}
     };
 
     if (getenv("DEBUG") != NULL) {
-    	debug = true;
+    	globalDebug = true;
     }
 
-    while ((opt = getopt_long(argc, argv, "r:", acceptedLongOptions, &longOptionIndex)) != GETOPT_FINISHED) {
+    while ((opt = getopt_long(argc, argv, "s:r:yo", acceptedLongOptions, &longOptionIndex)) != GETOPT_FINISHED) {
     	switch (opt) {
-    	case 'r':
-            if (strlen(optarg) > 0) {
-                replacementChar = optarg[0];
-            }
-            break;
-    	default:
-            fprintf(stderr, "unrecognized option %c\n", opt);
-    	}
+            case 'r':
+                if (strlen(optarg) > 0)
+                    globalOptionReplaceWith = optarg[0];
+                break;
+            case 's':
+                if (strlen(optarg) > 0)
+                    globalOptionSearchFor = optarg[0];
+                break;
+            case 'y':
+                globalOptionAutoApprove = true;
+                break;
+            case 'o':
+                globalOptionSearchOnly = true;
+                break;
+            default:
+                fprintf(stderr, "%s: unrecognized option: %c\n", globalProgramName, opt);
+                break;
+        }
     }
     /* optind is now the index of the first non-option argument. */
 
     if (argc > optind) {
         for (i = optind; i < argc; i++) {
-            descendDirectoryTree(argv[i], renameSpacesToDashes);
+            descendDirectoryTree(argv[i], replaceInFileName);
         }
     } else {
         cwd = getCurrentDirectory();
-        descendDirectoryTree(cwd, renameSpacesToDashes);
+        descendDirectoryTree(cwd, replaceInFileName);
         free(cwd);
     }
+    free(globalProgramName);
     return exitStatus;
 }
 
@@ -122,15 +141,15 @@ bool stringContains(const char *searchIn, char searchFor)
  * @return A new string with the characters replaced. It must be freed
  *         by the caller
  */
-char *replaceAll(const char *s, char searchChar, char replacementChar)
+char *replaceAll(const char *s, char searchFor, char replaceWith)
 {
     char *charFoundPointer;
     char *searchStart;
     char *result;
 
     result = searchStart = strdup(s);
-    while ((charFoundPointer = strchr(searchStart, searchChar)) != NULL) {
-        *charFoundPointer = replacementChar;
+    while ((charFoundPointer = strchr(searchStart, searchFor)) != NULL) {
+        *charFoundPointer = replaceWith;
         searchStart = charFoundPointer + 1;
     }
     return result;
@@ -163,7 +182,7 @@ void descendDirectoryTree(const char *path, void func(const char *path))
     TRACE_RETURN(fn, "void");
 }
 
-void renameSpacesToDashes(const char *path)
+void replaceInFileName(const char *path)
 {
     char *pathWithoutSpaces;
     char *pathBasenameWithoutSpaces;
@@ -178,7 +197,7 @@ void renameSpacesToDashes(const char *path)
     if (stringContains(pathBasename, ' ')) {
         pathCopy2 = strdup(path);
     	pathDirname = dirname(pathCopy2);
-        pathBasenameWithoutSpaces = replaceAll(pathBasename, charToReplace, replacementChar);
+        pathBasenameWithoutSpaces = replaceAll(pathBasename, globalOptionSearchFor, globalOptionReplaceWith);
         while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0 && strcmp(answer,"q") != 0) {
             printf("Rename '%s' to '%s'? (y/n/q) ", path, pathBasenameWithoutSpaces);
             if (fgets(answer, MAX_LINE_LENGTH, stdin) == FGETS_FAILURE_OR_EOF) {
