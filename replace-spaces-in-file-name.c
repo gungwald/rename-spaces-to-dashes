@@ -49,6 +49,7 @@ char *buildPath(const char *dirName, const char *fileName);
 void chomp(char *line);
 char *allocateCharArray(size_t size);
 char *getCurrentDirectory();
+char *toLowerCase(char *s);
 
 bool debug = false;
 char replacementChar = '-';
@@ -162,7 +163,6 @@ void descendDirectoryTree(const char *path, void func(const char *path))
     TRACE_RETURN(fn, "void");
 }
 
-/* TODO: Add a quit option */
 void renameSpacesToDashes(const char *path)
 {
     char *pathWithoutSpaces;
@@ -179,19 +179,21 @@ void renameSpacesToDashes(const char *path)
         pathCopy2 = strdup(path);
     	pathDirname = dirname(pathCopy2);
         pathBasenameWithoutSpaces = replaceAll(pathBasename, ' ', replacementChar);
-        while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0) {
-            printf("Rename '%s' to '%s'? (y/n) ", path, pathBasenameWithoutSpaces);
+        while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0 && strcmp(answer,"q") != 0) {
+            printf("Rename '%s' to '%s'? (y/n/q) ", path, pathBasenameWithoutSpaces);
             if (fgets(answer, MAX_LINE_LENGTH, stdin) == FGETS_FAILURE_OR_EOF) {
                 break;
             }
             chomp(answer);
-            tolower(answer[0]);
+            toLowerCase(answer);
         }
-        if (answer[0] == 'y') {
+        if (strcmp(answer,"y") == 0) {
             pathWithoutSpaces = buildPath(pathDirname, pathBasenameWithoutSpaces);
             renameFile(path, pathWithoutSpaces);
             free(pathWithoutSpaces);
-        }
+        } else if (strcmp(answer,"q") == 0) {
+            exit(EXIT_SUCCESS);
+	}
         free(pathBasenameWithoutSpaces);
         free(pathCopy2);
     }
@@ -321,4 +323,19 @@ char *getCurrentDirectory()
         }
     }
     return buffer;
+}
+
+/**
+ * This version modifies its argument.
+ */
+char *toLowerCase(char *s)
+{
+    size_t len;
+    size_t i;
+
+    len = strlen(s);
+    for (i = 0; i < len; i++) {
+        s[i] = tolower(s[i]);
+    }
+    return s;
 }
