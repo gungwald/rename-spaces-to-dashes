@@ -1,8 +1,8 @@
 #include <ctype.h>      /* for tolower */
 #include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
 #include <errno.h>      /* for errno, ERANGE */
-#include <getopt.h>	/* for struct option, required_arguent, getopt_long, */
-#include <libgen.h>	/* for basename, dirname */
+#include <getopt.h>		/* for struct option, required_arguent, getopt_long, optind, optarg */
+#include <libgen.h>		/* for basename, dirname */
 #include <stdbool.h>    /* for bool, TRUE, FALSE */
 #include <stdio.h>      /* for rename */
 #include <stdlib.h>     /* for getenv, EXIT_FAILURE, EXIT_SUCCESS */
@@ -53,9 +53,8 @@ char *toLowerCase(char *s);
 
 bool debug = false;
 char replacementChar = '-';
+char charToReplace = ' ';
 
-/* TODO: Use getopt */
-/* TODO: Make replacement character a command line option, defaults to dash */
 /* TODO: Make "character to replace" a command line option, defaults to space */
 /* TODO: Make program name plural */
 /* TODO: Add no-ask option */
@@ -75,8 +74,8 @@ int main(int argc, char *argv[])
     int opt;
 
     struct option acceptedLongOptions[] = {
-        {"replacement", required_argument, 0, 0},
-        {0,		0,		   0, 0}
+        {"replacement", required_argument, NULL, 'r'},
+        {NULL,			0,                 NULL, 0}
     };
 
     if (getenv("DEBUG") != NULL) {
@@ -94,9 +93,10 @@ int main(int argc, char *argv[])
             fprintf(stderr, "unrecognized option %c\n", opt);
     	}
     }
+    /* optind is now the index of the first non-option argument. */
 
-    if (argc > 1) {
-        for (i = 1; i < argc; i++) {
+    if (argc > optind) {
+        for (i = optind; i < argc; i++) {
             descendDirectoryTree(argv[i], renameSpacesToDashes);
         }
     } else {
@@ -178,7 +178,7 @@ void renameSpacesToDashes(const char *path)
     if (stringContains(pathBasename, ' ')) {
         pathCopy2 = strdup(path);
     	pathDirname = dirname(pathCopy2);
-        pathBasenameWithoutSpaces = replaceAll(pathBasename, ' ', replacementChar);
+        pathBasenameWithoutSpaces = replaceAll(pathBasename, charToReplace, replacementChar);
         while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0 && strcmp(answer,"q") != 0) {
             printf("Rename '%s' to '%s'? (y/n/q) ", path, pathBasenameWithoutSpaces);
             if (fgets(answer, MAX_LINE_LENGTH, stdin) == FGETS_FAILURE_OR_EOF) {
