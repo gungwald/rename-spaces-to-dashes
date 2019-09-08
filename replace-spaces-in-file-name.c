@@ -358,3 +358,26 @@ char *toLowerCase(char *s)
     }
     return s;
 }
+
+enum UserResponse askUser(const char *question)
+{
+    enum UserResponse response;
+
+    while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0 && strcmp(answer,"q") != 0) {
+        printf(question);
+        if (fgets(answer, MAX_LINE_LENGTH, stdin) == FGETS_FAILURE_OR_EOF) {
+            break;
+        }
+        chomp(answer);
+        toLowerCase(answer);
+    }
+    if (strcmp(answer,"y") == 0) {
+        response = YES_RESPONSE;
+    } else if (strcmp(answer,"q") == 0) {
+        response = NO_RESPONSE;
+    } else if (strcmp(answer,"q") == 0) {
+        exit(EXIT_SUCCESS);
+    }
+    return response;
+}
+
