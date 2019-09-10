@@ -1,7 +1,8 @@
+#define _GNU_SOURCE		/* to activate asprintf in stdio.h */
 #include <ctype.h>      /* for tolower */
 #include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
 #include <errno.h>      /* for errno, ERANGE */
-#include <getopt.h>     /* for struct option, required_arguent, getopt_long, optind, optarg */
+#include <getopt.h>     /* for struct option, required_argument, getopt_long, optind, optarg */
 #include <libgen.h>     /* for basename, dirname */
 #include <stdbool.h>    /* for bool, TRUE, FALSE */
 #include <stdio.h>      /* for rename */
@@ -26,6 +27,7 @@ const char *FILE_SEPARATOR = "/";
 #define MAX_LINE_LENGTH 1024
 
 enum FileType {REGULAR_FILE, DIRECTORY};
+enum UserResponse {YES_RESPONSE, NO_RESPONSE, QUIT_RESPONSE, ALL_RESPONSE};
 
 const DIR *OPENDIR_FAILURE = NULL;
 const struct dirent *READDIR_FAILURE = NULL;
@@ -50,6 +52,8 @@ void chomp(char *line);
 char *allocateCharArray(size_t size);
 char *getCurrentDirectory();
 char *toLowerCase(char *s);
+enum UserResponse askUser(const char *question);
+
 
 bool globalDebug = false;
 char *globalProgramName;
@@ -58,10 +62,9 @@ char globalOptionSearchFor = ' ';
 bool globalOptionAutoApprove = false;
 bool globalOptionSearchOnly = false;
 
-/* TODO: Make "character to replace" a command line option, defaults to space */
+/* TODO: When renaming a file, make sure you don't overwrite an existing file. */
 /* TODO: Make program name plural */
-/* TODO: Add no-ask option */
-/* TODO: Ask for any options not given, showing defaults */
+/* TODO: Implement usage() */
 /* TODO: If a rename clashes, modify the name, like append "--2" */
 /* TODO: Add option to simply find the problematic names, no rename */
 
@@ -186,11 +189,12 @@ void replaceInFileName(const char *path)
 {
     char *pathWithoutSpaces;
     char *pathBasenameWithoutSpaces;
-    char answer[MAX_LINE_LENGTH] = "";
     char *pathDirname;
     char *pathBasename;
     char *pathCopy;
     char *pathCopy2;
+    char *question;
+    enum UserResponse answer;
 
     pathCopy = strdup(path);
     pathBasename = basename(pathCopy);
@@ -198,21 +202,27 @@ void replaceInFileName(const char *path)
         pathCopy2 = strdup(path);
     	pathDirname = dirname(pathCopy2);
         pathBasenameWithoutSpaces = replaceAll(pathBasename, globalOptionSearchFor, globalOptionReplaceWith);
-        while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0 && strcmp(answer,"q") != 0) {
-            printf("Rename '%s' to '%s'? (y/n/q) ", path, pathBasenameWithoutSpaces);
-            if (fgets(answer, MAX_LINE_LENGTH, stdin) == FGETS_FAILURE_OR_EOF) {
-                break;
-            }
-            chomp(answer);
-            toLowerCase(answer);
+        if (globalOptionAutoApprove) {
+        	answer = YES_RESPONSE;
+        } else {
+	        asprintf(&question, "Rename '%s' to '%s'?", path, pathBasenameWithoutSpaces);
+	        answer = askUser(question);
         }
-        if (strcmp(answer,"y") == 0) {
+        switch (answer) {
+        case ALL_RESPONSE:
+        	globalOptionAutoApprove = true;
+        	/* no break */
+        case YES_RESPONSE:
             pathWithoutSpaces = buildPath(pathDirname, pathBasenameWithoutSpaces);
             renameFile(path, pathWithoutSpaces);
             free(pathWithoutSpaces);
-        } else if (strcmp(answer,"q") == 0) {
+            break;
+        case NO_RESPONSE:
+        	break;
+        case QUIT_RESPONSE:
             exit(EXIT_SUCCESS);
-	}
+            break;
+        }
         free(pathBasenameWithoutSpaces);
         free(pathCopy2);
     }
@@ -362,21 +372,35 @@ char *toLowerCase(char *s)
 enum UserResponse askUser(const char *question)
 {
     enum UserResponse response;
+    char answer[MAX_LINE_LENGTH] = "";
 
-    while (strcmp(answer,"y") != 0 && strcmp(answer,"n") != 0 && strcmp(answer,"q") != 0) {
+    while (strcmp(answer,"y")!=0 && strcmp(answer,"n")!=0 && strcmp(answer,"q")!=0 && strcmp(answer,"a")!=0) {
         printf(question);
+        printf(" (y/n/q/a) ");
         if (fgets(answer, MAX_LINE_LENGTH, stdin) == FGETS_FAILURE_OR_EOF) {
-            break;
+        	if (feof(stdin)) {
+        		exit(EXIT_SUCCESS);
+        	} else if (ferror(stdin)) {
+        		perror("stdin");
+        		exit(EXIT_FAILURE);
+        	} else {
+        		fprintf(stderr, "Unknown standard input error\n");
+        		exit(EXIT_FAILURE);
+        	}
         }
         chomp(answer);
         toLowerCase(answer);
     }
     if (strcmp(answer,"y") == 0) {
         response = YES_RESPONSE;
-    } else if (strcmp(answer,"q") == 0) {
+    } else if (strcmp(answer,"n") == 0) {
         response = NO_RESPONSE;
+    } else if (strcmp(answer,"a") == 0) {
+    	response = ALL_RESPONSE;
     } else if (strcmp(answer,"q") == 0) {
-        exit(EXIT_SUCCESS);
+    	response = QUIT_RESPONSE;
+    } else {
+    	response = NO_RESPONSE;
     }
     return response;
 }
