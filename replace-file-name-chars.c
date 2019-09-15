@@ -56,6 +56,7 @@ enum UserResponse askUser(const char *question);
 bool fileExists(const char *path);
 void die(const char *message);
 void dieWithSystemError(const char *message, int systemErrorCode);
+char *findAvailableName(const char *dirname, const char *basename);
 
 
 bool globalDebug = false;
@@ -205,11 +206,11 @@ void replaceInFileName(const char *path)
         pathCopy2 = strdup(path);
     	pathDirname = dirname(pathCopy2);
         pathBasenameWithoutSpaces = replaceAll(pathBasename, globalOptionSearchFor, globalOptionReplaceWith);
-        findAvailableName(pathDirname, pathBasenameWithoutSpaces);
+        pathWithoutSpaces = findAvailableName(pathDirname, pathBasenameWithoutSpaces);
         if (globalOptionAutoApprove) {
         	answer = YES_RESPONSE;
         } else {
-	        asprintf(&question, "Rename '%s' to '%s'?", path, pathBasenameWithoutSpaces);
+	        asprintf(&question, "Rename '%s' to '%s'?", path, pathWithoutSpaces);
 	        answer = askUser(question);
         }
         switch (answer) {
@@ -217,9 +218,7 @@ void replaceInFileName(const char *path)
         	globalOptionAutoApprove = true;
         	/* no break */
         case YES_RESPONSE:
-            pathWithoutSpaces = buildPath(pathDirname, pathBasenameWithoutSpaces);
             renameFile(path, pathWithoutSpaces);
-            free(pathWithoutSpaces);
             break;
         case NO_RESPONSE:
         	break;
@@ -227,6 +226,7 @@ void replaceInFileName(const char *path)
             exit(EXIT_SUCCESS);
             break;
         }
+        free(pathWithoutSpaces);
         free(pathBasenameWithoutSpaces);
         free(pathCopy2);
     }
@@ -235,13 +235,6 @@ void replaceInFileName(const char *path)
 
 void renameFile(const char *from, const char *to)
 {
-	char *target;
-	unsigned int n = 1;
-
-	target = to;
-	while (fileExists(target)) {
-		asprintf(&target, "%s-%d", to, n);
-	}
     if (rename(from, to) == RENAME_FAILURE)
         perror(from);
 }
@@ -439,4 +432,20 @@ void dieWithSystemError(const char *message, int systemErrorCode)
 {
 	fprintf(stderr, "%s: %s\n", message, strerror(systemErrorCode));
 	exit(EXIT_FAILURE);
+}
+
+char *findAvailableName(const char *dirname, const char *basename)
+{
+	char *path;
+	int n = 2;
+
+	path = buildPath(dirname, basename);
+	while (fileExists(path)) {
+		free(path);
+		if (n > 1024) {
+			die("Unable to find a free file name");
+		}
+		asprintf(&path, "%s/%s-%d", dirname, basename, n++);
+	}
+	return path;
 }

@@ -55,3 +55,6 @@ dkms.conf
 .*.swp
 /replace-spaces-in-file-name
 /blah_blah
+/replace-file-name-chars
+/blah-blah
+/blah-blah-2
