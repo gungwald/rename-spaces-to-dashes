@@ -7,7 +7,7 @@
 #include <stdbool.h>    /* for bool, TRUE, FALSE */
 #include <stdio.h>      /* for rename */
 #include <stdlib.h>     /* for getenv, EXIT_FAILURE, EXIT_SUCCESS */
-#include <string.h>     /* for strlen, strcat, strcpy, strchr, strdup */
+#include <string.h>     /* for strlen, strcat, strcpy, strchr, strdup, strerror */
 #include <sys/types.h>
 #include <sys/stat.h>   /* for stat, S_ISDIR, struct stat */
 #include <unistd.h>     /* for getcwd */
@@ -53,6 +53,9 @@ char *allocateCharArray(size_t size);
 char *getCurrentDirectory();
 char *toLowerCase(char *s);
 enum UserResponse askUser(const char *question);
+bool fileExists(const char *path);
+void die(const char *message);
+void dieWithSystemError(const char *message, int systemErrorCode);
 
 
 bool globalDebug = false;
@@ -202,6 +205,7 @@ void replaceInFileName(const char *path)
         pathCopy2 = strdup(path);
     	pathDirname = dirname(pathCopy2);
         pathBasenameWithoutSpaces = replaceAll(pathBasename, globalOptionSearchFor, globalOptionReplaceWith);
+        findAvailableName(pathDirname, pathBasenameWithoutSpaces);
         if (globalOptionAutoApprove) {
         	answer = YES_RESPONSE;
         } else {
@@ -231,6 +235,13 @@ void replaceInFileName(const char *path)
 
 void renameFile(const char *from, const char *to)
 {
+	char *target;
+	unsigned int n = 1;
+
+	target = to;
+	while (fileExists(target)) {
+		asprintf(&target, "%s-%d", to, n);
+	}
     if (rename(from, to) == RENAME_FAILURE)
         perror(from);
 }
@@ -321,8 +332,7 @@ char *allocateCharArray(size_t size)
     char *array;
 
     if ((array = (char *) malloc(size * sizeof(char))) == MALLOC_FAILURE) {
-        perror("malloc");
-        exit(EXIT_FAILURE);
+    	dieWithSystemError("malloc", errno);
     }
     return array;
 }
@@ -342,10 +352,8 @@ char *getCurrentDirectory()
             if (getcwdErrorCode == ERANGE) {
                 /* A bigger buffer is needed. */
                 bufferSize *= 2; /* Double the size */
-                buffer = allocateCharArray(bufferSize);
             } else {
-                perror("getcwd");
-                exit(EXIT_FAILURE);
+            	dieWithSystemError("getcwd", errno);
             }
         } else {
             stillTrying = false;
@@ -381,11 +389,9 @@ enum UserResponse askUser(const char *question)
         	if (feof(stdin)) {
         		exit(EXIT_SUCCESS);
         	} else if (ferror(stdin)) {
-        		perror("stdin");
-        		exit(EXIT_FAILURE);
+        		dieWithSystemError("stdin", errno);
         	} else {
-        		fprintf(stderr, "Unknown standard input error\n");
-        		exit(EXIT_FAILURE);
+        		die("Unknown standard input error");
         	}
         }
         chomp(answer);
@@ -405,3 +411,32 @@ enum UserResponse askUser(const char *question)
     return response;
 }
 
+bool fileExists(const char *path)
+{
+    struct stat fileProperties;
+    bool fileExists;
+    char *fn = "fileExists";
+
+    if (stat(path, &fileProperties) == STAT_FAILURE)
+    	if (errno == ENOENT)
+    		fileExists = false;
+    	else
+    		dieWithSystemError(path, errno);
+    else
+        fileExists = true;
+
+    TRACE_RETURN_BOOL(fn, fileExists);
+    return fileExists;
+}
+
+void die(const char *message)
+{
+	fprintf(stderr, "%s\n", message);
+	exit(EXIT_FAILURE);
+}
+
+void dieWithSystemError(const char *message, int systemErrorCode)
+{
+	fprintf(stderr, "%s: %s\n", message, strerror(systemErrorCode));
+	exit(EXIT_FAILURE);
+}

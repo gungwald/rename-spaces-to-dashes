@@ -1,4 +1,4 @@
-PROGRAM=replace-spaces-in-file-name
+PROGRAM=replace-file-name-chars
 INSTALL_PREFIX=/usr/local
 
 all: $(PROGRAM)
