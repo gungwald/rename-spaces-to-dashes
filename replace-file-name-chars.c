@@ -19,10 +19,10 @@ const char *FILE_SEPARATOR = "\\";
 const char *FILE_SEPARATOR = "/";
 #endif
 
-#define TRACE_ENTER(f,n,v)          if(globalDebug)printf("Enter %s with %s=%s\n",f,n,v)
-#define TRACE_ENTER2(f,n,v,n2,v2)   if(globalDebug)printf("Enter %s with %s=%s %s=%s\n",f,n,v,n2,v2)
-#define TRACE_RETURN(f,v)           if(globalDebug)printf("Return from %s wth %s\n",f,v)
-#define TRACE_RETURN_BOOL(f,v)      if(globalDebug)printf("Return from %s wth %s\n",f,btoa(v))
+#define TRACE_ENTER(f,n,v)          if(g_debug)printf("Enter %s with %s=%s\n",f,n,v)
+#define TRACE_ENTER2(f,n,v,n2,v2)   if(g_debug)printf("Enter %s with %s=%s %s=%s\n",f,n,v,n2,v2)
+#define TRACE_RETURN(f,v)           if(g_debug)printf("Return from %s with %s\n",f,v)
+#define TRACE_RETURN_BOOL(f,v)      if(g_debug)printf("Return from %s with %s\n",f,btoa(v))
 
 #define MAX_LINE_LENGTH 1024
 
@@ -57,24 +57,17 @@ bool fileExists(const char *path);
 void die(const char *message);
 void dieWithSystemError(const char *message, int systemErrorCode);
 char *findAvailableName(const char *dirname, const char *basename);
+char *getBasename(const char *path);
+char *getDirname(const char *path);
 
+bool g_debug = false;
+char *g_programName;
+char g_replaceWith = '-';
+char g_searchFor = ' ';
+bool g_autoApprove = false;
+bool g_searchOnly = false;
 
-bool globalDebug = false;
-char *globalProgramName;
-char globalOptionReplaceWith = '-';
-char globalOptionSearchFor = ' ';
-bool globalOptionAutoApprove = false;
-bool globalOptionSearchOnly = false;
-
-/* TODO: When renaming a file, make sure you don't overwrite an existing file. */
-/* TODO: Make program name plural */
 /* TODO: Implement usage() */
-/* TODO: If a rename clashes, modify the name, like append "--2" */
-/* TODO: Add option to simply find the problematic names, no rename */
-
-/* Later, maybe a different program */
-/* TODO: Identify all problematic characters in file names, not just spaces */
-/* TODO: Think of a better name, like replace-problem-chars-in-file-names */
 int main(int argc, char *argv[])
 {
     int i;
@@ -83,7 +76,7 @@ int main(int argc, char *argv[])
     char *cwd;
     int opt;
 
-    globalProgramName = strdup(argv[0]);
+    g_programName = strdup(argv[0]);
 
     struct option acceptedLongOptions[] = {
         {"replace-with", required_argument, NULL, 'r'},
@@ -94,27 +87,27 @@ int main(int argc, char *argv[])
     };
 
     if (getenv("DEBUG") != NULL) {
-    	globalDebug = true;
+    	g_debug = true;
     }
 
     while ((opt = getopt_long(argc, argv, "s:r:yo", acceptedLongOptions, &longOptionIndex)) != GETOPT_FINISHED) {
     	switch (opt) {
             case 'r':
                 if (strlen(optarg) > 0)
-                    globalOptionReplaceWith = optarg[0];
+                    g_replaceWith = optarg[0];
                 break;
             case 's':
                 if (strlen(optarg) > 0)
-                    globalOptionSearchFor = optarg[0];
+                    g_searchFor = optarg[0];
                 break;
             case 'y':
-                globalOptionAutoApprove = true;
+                g_autoApprove = true;
                 break;
             case 'o':
-                globalOptionSearchOnly = true;
+                g_searchOnly = true;
                 break;
             default:
-                fprintf(stderr, "%s: unrecognized option: %c\n", globalProgramName, opt);
+                fprintf(stderr, "%s: unrecognized option: %c\n", g_programName, opt);
                 break;
         }
     }
@@ -129,7 +122,7 @@ int main(int argc, char *argv[])
         descendDirectoryTree(cwd, replaceInFileName);
         free(cwd);
     }
-    free(globalProgramName);
+    free(g_programName);
     return exitStatus;
 }
 
@@ -195,42 +188,42 @@ void replaceInFileName(const char *path)
     char *pathBasenameWithoutSpaces;
     char *pathDirname;
     char *pathBasename;
-    char *pathCopy;
-    char *pathCopy2;
     char *question;
     enum UserResponse answer;
 
-    pathCopy = strdup(path);
-    pathBasename = basename(pathCopy);
-    if (stringContains(pathBasename, ' ')) {
-        pathCopy2 = strdup(path);
-    	pathDirname = dirname(pathCopy2);
-        pathBasenameWithoutSpaces = replaceAll(pathBasename, globalOptionSearchFor, globalOptionReplaceWith);
-        pathWithoutSpaces = findAvailableName(pathDirname, pathBasenameWithoutSpaces);
-        if (globalOptionAutoApprove) {
-        	answer = YES_RESPONSE;
-        } else {
-	        asprintf(&question, "Rename '%s' to '%s'?", path, pathWithoutSpaces);
-	        answer = askUser(question);
-        }
-        switch (answer) {
-        case ALL_RESPONSE:
-        	globalOptionAutoApprove = true;
-        	/* no break */
-        case YES_RESPONSE:
-            renameFile(path, pathWithoutSpaces);
-            break;
-        case NO_RESPONSE:
-        	break;
-        case QUIT_RESPONSE:
-            exit(EXIT_SUCCESS);
-            break;
-        }
-        free(pathWithoutSpaces);
-        free(pathBasenameWithoutSpaces);
-        free(pathCopy2);
+    pathBasename = getBasename(path);
+    if (stringContains(pathBasename, g_searchFor)) {
+    	if (g_searchOnly) {
+    		puts(path);
+    	} else {
+	    	pathDirname = getDirname(path);
+	        pathBasenameWithoutSpaces = replaceAll(pathBasename, g_searchFor, g_replaceWith);
+	        pathWithoutSpaces = findAvailableName(pathDirname, pathBasenameWithoutSpaces);
+	        if (g_autoApprove) {
+	        	answer = YES_RESPONSE;
+	        } else {
+		        asprintf(&question, "Rename '%s' to '%s'?", path, pathWithoutSpaces);
+		        answer = askUser(question);
+	        }
+	        switch (answer) {
+	        case ALL_RESPONSE:
+	        	g_autoApprove = true;
+	        	/* no break */
+	        case YES_RESPONSE:
+	            renameFile(path, pathWithoutSpaces);
+	            break;
+	        case NO_RESPONSE:
+	        	break;
+	        case QUIT_RESPONSE:
+	            exit(EXIT_SUCCESS);
+	            break;
+	        }
+	        free(pathWithoutSpaces);
+	        free(pathBasenameWithoutSpaces);
+	        free(pathDirname);
+    	}
     }
-    free(pathCopy);
+    free(pathBasename);
 }
 
 void renameFile(const char *from, const char *to)
@@ -448,4 +441,36 @@ char *findAvailableName(const char *dirname, const char *basename)
 		asprintf(&path, "%s/%s-%d", dirname, basename, n++);
 	}
 	return path;
+}
+
+char *getBasename(const char *path)
+{
+	char *pathCopy;
+	char *basenameCopy;
+
+	/* basename modifies path so a copy must be created. */
+	pathCopy = strdup(path);
+
+	/* When pathCopy is freed, we lose the memory that the
+	   result of basename is stored in. So we need to use
+	   strdup to create our own copy of the result. */
+	basenameCopy = strdup(basename(pathCopy));
+	free(pathCopy);
+	return basenameCopy;
+}
+
+char *getDirname(const char *path)
+{
+	char *pathCopy;
+	char *dirnameCopy;
+
+	/* dirname modifies path so a copy must be created. */
+	pathCopy = strdup(path);
+
+	/* When pathCopy is freed, we lose the memory that the
+	   result of dirname is stored in. So we need to use
+	   strdup to create our own copy of the result. */
+	dirnameCopy = strdup(dirname(pathCopy));
+	free(pathCopy);
+	return dirnameCopy;
 }
