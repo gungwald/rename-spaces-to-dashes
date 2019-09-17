@@ -1,4 +1,4 @@
-#define _GNU_SOURCE		/* to activate asprintf in stdio.h */
+#define _GNU_SOURCE     /* to activate asprintf in stdio.h */
 #include <ctype.h>      /* for tolower */
 #include <dirent.h>     /* for DIR, opendir, readdir, closedir, struct dirent */
 #include <errno.h>      /* for errno, ERANGE */
@@ -8,7 +8,7 @@
 #include <stdio.h>      /* for rename */
 #include <stdlib.h>     /* for getenv, EXIT_FAILURE, EXIT_SUCCESS */
 #include <string.h>     /* for strlen, strcat, strcpy, strchr, strdup, strerror */
-#include <sys/types.h>
+#include <sys/types.h>  /* ??? */
 #include <sys/stat.h>   /* for stat, S_ISDIR, struct stat */
 #include <unistd.h>     /* for getcwd */
 
@@ -39,6 +39,7 @@ const int GETOPT_FINISHED = -1;
 const void *MALLOC_FAILURE = NULL;
 const char *GETCWD_FAILURE = NULL;
 const char *FGETS_FAILURE_OR_EOF = NULL;
+const int ASPRINTF_FAILURE = -1;
 
 char *btoa(bool b);
 bool stringContains(const char *searchIn, char searchFor);
@@ -80,35 +81,37 @@ int main(int argc, char *argv[])
 
     struct option acceptedLongOptions[] = {
         {"replace-with", required_argument, NULL, 'r'},
-		{"search-for", required_argument, NULL, 's'},
-		{"auto-approve", no_argument, NULL, 'y'},
-		{"search-only", no_argument, NULL, 'o'},
+        {"search-for", required_argument, NULL, 's'},
+        {"auto-approve", no_argument, NULL, 'y'},
+        {"search-only", no_argument, NULL, 'o'},
         {NULL, 0, NULL, 0}
     };
 
     if (getenv("DEBUG") != NULL) {
-    	g_debug = true;
+        g_debug = true;
     }
 
     while ((opt = getopt_long(argc, argv, "s:r:yo", acceptedLongOptions, &longOptionIndex)) != GETOPT_FINISHED) {
-    	switch (opt) {
-            case 'r':
-                if (strlen(optarg) > 0)
-                    g_replaceWith = optarg[0];
-                break;
-            case 's':
-                if (strlen(optarg) > 0)
-                    g_searchFor = optarg[0];
-                break;
-            case 'y':
-                g_autoApprove = true;
-                break;
-            case 'o':
-                g_searchOnly = true;
-                break;
-            default:
-                fprintf(stderr, "%s: unrecognized option: %c\n", g_programName, opt);
-                break;
+        switch (opt) {
+        case 'r':
+            if (strlen(optarg) > 0) {
+                g_replaceWith = optarg[0];
+            }
+            break;
+        case 's':
+            if (strlen(optarg) > 0) {
+                g_searchFor = optarg[0];
+            }
+            break;
+        case 'y':
+            g_autoApprove = true;
+            break;
+        case 'o':
+            g_searchOnly = true;
+            break;
+        default:
+            fprintf(stderr, "%s: unrecognized option: %c\n", g_programName, opt);
+            break;
         }
     }
     /* optind is now the index of the first non-option argument. */
@@ -117,7 +120,8 @@ int main(int argc, char *argv[])
         for (i = optind; i < argc; i++) {
             descendDirectoryTree(argv[i], replaceInFileName);
         }
-    } else {
+    }
+    else {
         cwd = getCurrentDirectory();
         descendDirectoryTree(cwd, replaceInFileName);
         free(cwd);
@@ -132,7 +136,7 @@ bool stringContains(const char *searchIn, char searchFor)
 }
 
 /**
- * Creates a new string with all instances of searchChar replaced with 
+ * Creates a new string with all instances of searchChar replaced with
  * replacementChar.
  *
  * @param s The string in which to search for searchChar
@@ -161,16 +165,16 @@ void descendDirectoryTree(const char *path, void func(const char *path))
     struct dirent *entry;
     char *dirEntryPath;
     char *fn = "descendDirectoryTree";
-    
+
     TRACE_ENTER(fn, "path", path);
     if (isDirectory(path)) {
         if ((d = opendir(path)) != OPENDIR_FAILURE) {
             while ((entry = readdir(d)) != READDIR_FAILURE) {
-            	if (entry->d_name[0] != '.') { /* Not hidden, cwd, or parent */
+                if (entry->d_name[0] != '.') { /* Not hidden, cwd, or parent */
                     dirEntryPath = buildPath(path, entry->d_name);
                     descendDirectoryTree(dirEntryPath, func);
                     free(dirEntryPath);
-            	}
+                }
             }
             closedir(d);
         }
@@ -193,43 +197,49 @@ void replaceInFileName(const char *path)
 
     pathBasename = getBasename(path);
     if (stringContains(pathBasename, g_searchFor)) {
-    	if (g_searchOnly) {
-    		puts(path);
-    	} else {
-	    	pathDirname = getDirname(path);
-	        pathBasenameWithoutSpaces = replaceAll(pathBasename, g_searchFor, g_replaceWith);
-	        pathWithoutSpaces = findAvailableName(pathDirname, pathBasenameWithoutSpaces);
-	        if (g_autoApprove) {
-	        	answer = YES_RESPONSE;
-	        } else {
-		        asprintf(&question, "Rename '%s' to '%s'?", path, pathWithoutSpaces);
-		        answer = askUser(question);
-	        }
-	        switch (answer) {
-	        case ALL_RESPONSE:
-	        	g_autoApprove = true;
-	        	/* no break */
-	        case YES_RESPONSE:
-	            renameFile(path, pathWithoutSpaces);
-	            break;
-	        case NO_RESPONSE:
-	        	break;
-	        case QUIT_RESPONSE:
-	            exit(EXIT_SUCCESS);
-	            break;
-	        }
-	        free(pathWithoutSpaces);
-	        free(pathBasenameWithoutSpaces);
-	        free(pathDirname);
-    	}
+        if (g_searchOnly) {
+            puts(path);
+        }
+        else {
+            pathDirname = getDirname(path);
+            pathBasenameWithoutSpaces = replaceAll(pathBasename, g_searchFor, g_replaceWith);
+            pathWithoutSpaces = findAvailableName(pathDirname, pathBasenameWithoutSpaces);
+            if (g_autoApprove) {
+                answer = YES_RESPONSE;
+            }
+            else {
+                /* TODO - Should be: In dirname, rename %s to %s? */
+                if (asprintf(&question, "Rename '%s' to '%s'?", path, pathWithoutSpaces) == ASPRINTF_FAILURE) {
+                    die("Failed to allocate memory");
+                }
+                answer = askUser(question);
+            }
+            switch (answer) {
+            case ALL_RESPONSE:
+                g_autoApprove = true;
+            /* no break */
+            case YES_RESPONSE:
+                renameFile(path, pathWithoutSpaces);
+                break;
+            case NO_RESPONSE:
+                break;
+            case QUIT_RESPONSE:
+                exit(EXIT_SUCCESS);
+                break;
+            }
+            free(pathWithoutSpaces);
+            free(pathBasenameWithoutSpaces);
+            free(pathDirname);
+        }
     }
     free(pathBasename);
 }
 
 void renameFile(const char *from, const char *to)
 {
-    if (rename(from, to) == RENAME_FAILURE)
+    if (rename(from, to) == RENAME_FAILURE) {
         perror(from);
+    }
 }
 
 bool isDirectory(const char *path)
@@ -238,10 +248,12 @@ bool isDirectory(const char *path)
     bool isDirectory = false;
     char *fn = "isDirectory";
 
-    if (stat(path, &fileProperties) == STAT_FAILURE)
+    if (stat(path, &fileProperties) == STAT_FAILURE) {
         perror(path);
-    else if (S_ISDIR(fileProperties.st_mode))
+    }
+    else if (S_ISDIR(fileProperties.st_mode)) {
         isDirectory = true;
+    }
 
     TRACE_RETURN_BOOL(fn, isDirectory);
     return isDirectory;
@@ -257,27 +269,34 @@ char *buildPath(const char *dirName, const char *fileName)
     char *fn = "buildPath";
 
     TRACE_ENTER2(fn, "dirName", dirName, "fileName", fileName);
-    if (dirName != NULL)
+    if (dirName != NULL) {
         dirNameLength = strlen(dirName);
+    }
 
-    if (fileName != NULL)
+    if (fileName != NULL) {
         fileNameLength = strlen(fileName);
+    }
 
-    if (dirNameLength > 0 && fileNameLength > 0)
+    if (dirNameLength > 0 && fileNameLength > 0) {
         useFileSeparator = true;
-    else
+    }
+    else {
         useFileSeparator = false;
+    }
 
     resultLength = dirNameLength + (useFileSeparator?strlen(FILE_SEPARATOR):0) + fileNameLength;
     result = allocateCharArray(resultLength);
 
     strcpy(result, "");
-    if (dirName != NULL)
+    if (dirName != NULL) {
         strcat(result, dirName);
-    if (useFileSeparator)
+    }
+    if (useFileSeparator) {
         strcat(result, FILE_SEPARATOR);
-    if (fileName != NULL)
+    }
+    if (fileName != NULL) {
         strcat(result, fileName);
+    }
 
     TRACE_RETURN(fn, result);
     return result;
@@ -298,7 +317,8 @@ void chomp(char *line)
             line[lastIndex] = '\0';
             if (lastIndex == 0) {
                 break;
-            } else {
+            }
+            else {
                 lastIndex--;
             }
         }
@@ -318,7 +338,7 @@ char *allocateCharArray(size_t size)
     char *array;
 
     if ((array = (char *) malloc(size * sizeof(char))) == MALLOC_FAILURE) {
-    	dieWithSystemError("malloc", errno);
+        dieWithSystemError("malloc", errno);
     }
     return array;
 }
@@ -338,10 +358,12 @@ char *getCurrentDirectory()
             if (getcwdErrorCode == ERANGE) {
                 /* A bigger buffer is needed. */
                 bufferSize *= 2; /* Double the size */
-            } else {
-            	dieWithSystemError("getcwd", errno);
             }
-        } else {
+            else {
+                dieWithSystemError("getcwd", errno);
+            }
+        }
+        else {
             stillTrying = false;
         }
     }
@@ -369,30 +391,37 @@ enum UserResponse askUser(const char *question)
     char answer[MAX_LINE_LENGTH] = "";
 
     while (strcmp(answer,"y")!=0 && strcmp(answer,"n")!=0 && strcmp(answer,"q")!=0 && strcmp(answer,"a")!=0) {
-        printf(question);
+        /* It is a security issue to printf(question) directly. */
+        printf("%s", question);
         printf(" (y/n/q/a) ");
         if (fgets(answer, MAX_LINE_LENGTH, stdin) == FGETS_FAILURE_OR_EOF) {
-        	if (feof(stdin)) {
-        		exit(EXIT_SUCCESS);
-        	} else if (ferror(stdin)) {
-        		dieWithSystemError("stdin", errno);
-        	} else {
-        		die("Unknown standard input error");
-        	}
+            if (feof(stdin)) {
+                exit(EXIT_SUCCESS);
+            }
+            else if (ferror(stdin)) {
+                dieWithSystemError("stdin", errno);
+            }
+            else {
+                die("Unknown standard input error");
+            }
         }
         chomp(answer);
         toLowerCase(answer);
     }
     if (strcmp(answer,"y") == 0) {
         response = YES_RESPONSE;
-    } else if (strcmp(answer,"n") == 0) {
+    }
+    else if (strcmp(answer,"n") == 0) {
         response = NO_RESPONSE;
-    } else if (strcmp(answer,"a") == 0) {
-    	response = ALL_RESPONSE;
-    } else if (strcmp(answer,"q") == 0) {
-    	response = QUIT_RESPONSE;
-    } else {
-    	response = NO_RESPONSE;
+    }
+    else if (strcmp(answer,"a") == 0) {
+        response = ALL_RESPONSE;
+    }
+    else if (strcmp(answer,"q") == 0) {
+        response = QUIT_RESPONSE;
+    }
+    else {
+        response = NO_RESPONSE;
     }
     return response;
 }
@@ -404,12 +433,15 @@ bool fileExists(const char *path)
     char *fn = "fileExists";
 
     if (stat(path, &fileProperties) == STAT_FAILURE)
-    	if (errno == ENOENT)
-    		fileExists = false;
-    	else
-    		dieWithSystemError(path, errno);
-    else
+        if (errno == ENOENT) {
+            fileExists = false;
+        }
+        else {
+            dieWithSystemError(path, errno);
+        }
+    else {
         fileExists = true;
+    }
 
     TRACE_RETURN_BOOL(fn, fileExists);
     return fileExists;
@@ -417,60 +449,62 @@ bool fileExists(const char *path)
 
 void die(const char *message)
 {
-	fprintf(stderr, "%s\n", message);
-	exit(EXIT_FAILURE);
+    fprintf(stderr, "%s\n", message);
+    exit(EXIT_FAILURE);
 }
 
 void dieWithSystemError(const char *message, int systemErrorCode)
 {
-	fprintf(stderr, "%s: %s\n", message, strerror(systemErrorCode));
-	exit(EXIT_FAILURE);
+    fprintf(stderr, "%s: %s\n", message, strerror(systemErrorCode));
+    exit(EXIT_FAILURE);
 }
 
 char *findAvailableName(const char *dirname, const char *basename)
 {
-	char *path;
-	int n = 2;
+    char *path;
+    int n = 2;
 
-	path = buildPath(dirname, basename);
-	while (fileExists(path)) {
-		free(path);
-		if (n > 1024) {
-			die("Unable to find a free file name");
-		}
-		asprintf(&path, "%s/%s-%d", dirname, basename, n++);
-	}
-	return path;
+    path = buildPath(dirname, basename);
+    while (fileExists(path)) {
+        free(path);
+        if (n > 1024) {
+            die("Unable to find a free file name");
+        }
+        if (asprintf(&path, "%s/%s-%d", dirname, basename, n++) == ASPRINTF_FAILURE) {
+            die("Failed to allocate memory for asprintf");
+        }
+    }
+    return path;
 }
 
 char *getBasename(const char *path)
 {
-	char *pathCopy;
-	char *basenameCopy;
+    char *pathCopy;
+    char *basenameCopy;
 
-	/* basename modifies path so a copy must be created. */
-	pathCopy = strdup(path);
+    /* basename modifies path so a copy must be created. */
+    pathCopy = strdup(path);
 
-	/* When pathCopy is freed, we lose the memory that the
-	   result of basename is stored in. So we need to use
-	   strdup to create our own copy of the result. */
-	basenameCopy = strdup(basename(pathCopy));
-	free(pathCopy);
-	return basenameCopy;
+    /* When pathCopy is freed, we lose the memory that the
+       result of basename is stored in. So we need to use
+       strdup to create our own copy of the result. */
+    basenameCopy = strdup(basename(pathCopy));
+    free(pathCopy);
+    return basenameCopy;
 }
 
 char *getDirname(const char *path)
 {
-	char *pathCopy;
-	char *dirnameCopy;
+    char *pathCopy;
+    char *dirnameCopy;
 
-	/* dirname modifies path so a copy must be created. */
-	pathCopy = strdup(path);
+    /* dirname modifies path so a copy must be created. */
+    pathCopy = strdup(path);
 
-	/* When pathCopy is freed, we lose the memory that the
-	   result of dirname is stored in. So we need to use
-	   strdup to create our own copy of the result. */
-	dirnameCopy = strdup(dirname(pathCopy));
-	free(pathCopy);
-	return dirnameCopy;
+    /* When pathCopy is freed, we lose the memory that the
+       result of dirname is stored in. So we need to use
+       strdup to create our own copy of the result. */
+    dirnameCopy = strdup(dirname(pathCopy));
+    free(pathCopy);
+    return dirnameCopy;
 }
