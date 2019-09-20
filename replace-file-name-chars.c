@@ -60,6 +60,7 @@ void dieWithSystemError(const char *message, int systemErrorCode);
 char *findAvailableName(const char *dirname, const char *basename);
 char *getBasename(const char *path);
 char *getDirname(const char *path);
+void usage();
 
 bool g_debug = false;
 char *g_programName;
@@ -68,22 +69,21 @@ char g_searchFor = ' ';
 bool g_autoApprove = false;
 bool g_searchOnly = false;
 
-/* TODO: Implement usage() */
 int main(int argc, char *argv[])
 {
     int i;
     int longOptionIndex = 0;
     int exitStatus = EXIT_SUCCESS;
-    char *cwd;
     int opt;
 
-    g_programName = strdup(argv[0]);
+    g_programName = getBasename(argv[0]);
 
     struct option acceptedLongOptions[] = {
         {"replace-with", required_argument, NULL, 'r'},
         {"search-for", required_argument, NULL, 's'},
         {"auto-approve", no_argument, NULL, 'y'},
         {"search-only", no_argument, NULL, 'o'},
+        {"help", no_argument, NULL, 'h'},
         {NULL, 0, NULL, 0}
     };
 
@@ -91,7 +91,7 @@ int main(int argc, char *argv[])
         g_debug = true;
     }
 
-    while ((opt = getopt_long(argc, argv, "s:r:yo", acceptedLongOptions, &longOptionIndex)) != GETOPT_FINISHED) {
+    while ((opt = getopt_long(argc, argv, "s:r:yoh", acceptedLongOptions, &longOptionIndex)) != GETOPT_FINISHED) {
         switch (opt) {
         case 'r':
             if (strlen(optarg) > 0) {
@@ -109,8 +109,12 @@ int main(int argc, char *argv[])
         case 'o':
             g_searchOnly = true;
             break;
+        case 'h':
+        	usage();
+        	break;
         default:
             fprintf(stderr, "%s: unrecognized option: %c\n", g_programName, opt);
+            usage();
             break;
         }
     }
@@ -122,9 +126,7 @@ int main(int argc, char *argv[])
         }
     }
     else {
-        cwd = getCurrentDirectory();
-        descendDirectoryTree(cwd, replaceInFileName);
-        free(cwd);
+    	usage();
     }
     free(g_programName);
     return exitStatus;
@@ -507,4 +509,16 @@ char *getDirname(const char *path)
     dirnameCopy = strdup(dirname(pathCopy));
     free(pathCopy);
     return dirnameCopy;
+}
+
+void usage()
+{
+	puts("Replaces characters in file names");
+	printf("Usage: %s [options] file ...\n", g_programName);
+	puts("  If file is a directory the program will recursively rename all files in the");
+	puts("  directory and its subdirectories.");
+	puts("  -s, --search-for=CHAR    Specify the character to search for; default=space");
+	puts("  -r, --replace-with=CHAR  Specify the replacement character;   default=dash");
+	puts("  -y, --auto-approve       Don't ask to rename each file");
+	puts("  -o, --search-only        Don't rename, just search");
 }
