@@ -268,7 +268,7 @@ char *buildPath(const char *dirName, const char *fileName)
     char *result;
     size_t dirNameLength = 0;
     size_t fileNameLength = 0;
-    size_t resultLength;
+    size_t resultSize;
     bool useFileSeparator;
     char *fn = "buildPath";
 
@@ -288,8 +288,8 @@ char *buildPath(const char *dirName, const char *fileName)
         useFileSeparator = false;
     }
 
-    resultLength = dirNameLength + (useFileSeparator?strlen(FILE_SEPARATOR):0) + fileNameLength;
-    result = allocateCharArray(resultLength);
+    resultSize = dirNameLength + (useFileSeparator?strlen(FILE_SEPARATOR):0) + fileNameLength + 1;
+    result = allocateCharArray(resultSize);
 
     strcpy(result, "");
     if (dirName != NULL) {
