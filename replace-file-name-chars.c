@@ -195,6 +195,7 @@ void replaceInFileName(const char *path)
     char *pathDirname;
     char *pathBasename;
     char *question;
+    char *uniqueBasename;
     enum UserResponse answer;
 
     pathBasename = getBasename(path);
@@ -205,13 +206,12 @@ void replaceInFileName(const char *path)
         else {
             pathDirname = getDirname(path);
             pathBasenameWithoutSpaces = replaceAll(pathBasename, g_searchFor, g_replaceWith);
-            pathWithoutSpaces = findAvailableName(pathDirname, pathBasenameWithoutSpaces);
+            uniqueBasename = findAvailableName(pathDirname, pathBasenameWithoutSpaces);
             if (g_autoApprove) {
                 answer = YES_RESPONSE;
             }
             else {
-                /* TODO - Should be: In dirname, rename %s to %s? */
-                if (asprintf(&question, "Rename '%s' to '%s'?", path, pathWithoutSpaces) == ASPRINTF_FAILURE) {
+                if (asprintf(&question, "In %s, rename '%s' to '%s'?", pathDirname, pathBasename, uniqueBasename) == ASPRINTF_FAILURE) {
                     die("Failed to allocate memory");
                 }
                 answer = askUser(question);
@@ -221,7 +221,9 @@ void replaceInFileName(const char *path)
                 g_autoApprove = true;
             /* no break */
             case YES_RESPONSE:
+            	pathWithoutSpaces = buildPath(pathDirname, uniqueBasename);
                 renameFile(path, pathWithoutSpaces);
+                free(pathWithoutSpaces);
                 break;
             case NO_RESPONSE:
                 break;
@@ -229,7 +231,7 @@ void replaceInFileName(const char *path)
                 exit(EXIT_SUCCESS);
                 break;
             }
-            free(pathWithoutSpaces);
+            free(uniqueBasename);
             free(pathBasenameWithoutSpaces);
             free(pathDirname);
         }
@@ -444,7 +446,6 @@ bool fileExists(const char *path)
     else {
         fileExists = true;
     }
-
     TRACE_RETURN_BOOL(fn, fileExists);
     return fileExists;
 }
@@ -463,20 +464,23 @@ void dieWithSystemError(const char *message, int systemErrorCode)
 
 char *findAvailableName(const char *dirname, const char *basename)
 {
-    char *path;
+    char *absPath;
+    char *uniqueBasename;
     int n = 2;
 
-    path = buildPath(dirname, basename);
-    while (fileExists(path)) {
-        free(path);
+    absPath = buildPath(dirname, basename);
+    while (fileExists(absPath)) {
+        free(absPath);
         if (n > 1024) {
             die("Unable to find a free file name");
         }
-        if (asprintf(&path, "%s/%s-%d", dirname, basename, n++) == ASPRINTF_FAILURE) {
+        if (asprintf(&absPath, "%s/%s-%d", dirname, basename, n++) == ASPRINTF_FAILURE) {
             die("Failed to allocate memory for asprintf");
         }
     }
-    return path;
+    uniqueBasename = getBasename(absPath);
+    free(absPath);
+    return uniqueBasename;
 }
 
 char *getBasename(const char *path)
