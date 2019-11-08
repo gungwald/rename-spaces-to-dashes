@@ -526,3 +526,22 @@ void usage()
 	puts("  -y, --auto-approve       Don't ask to rename each file");
 	puts("  -o, --search-only        Don't rename, just search");
 }
+
+char *immutableBasename(const char *path)
+{
+	char *p;
+	char *lastSlashPointer = NULL;
+	char *basename;
+
+	for (p = path; *p > '\0'; p++) {
+		if (*p == '/') {
+			lastSlashPointer = p;
+		}
+	}
+	if (lastSlashPointer == NULL) {
+		basename = path;
+	} else {
+		basename = lastSlashPointer++;
+	}
+	return basename;
+}
